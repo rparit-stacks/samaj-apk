@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Pre-Android-12 windowBackground splash.
+
+  White background + centered logo. No fixed width/height on the logo item
+  (the old 200dp clamp was clipping the PNG). Bitmap gravity=center keeps
+  it centered at its natural size without cropping.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@android:color/white" />
+    <item android:gravity="center">
+        <bitmap
+            android:src="@drawable/app_logo"
+            android:gravity="center" />
+    </item>
+</layer-list>

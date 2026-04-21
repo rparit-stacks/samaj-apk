@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">Suryavanshi Samaj</string>
+    <string name="back_exit_hint">Press back again to exit</string>
+    <string name="error_title">No Connection</string>
+    <string name="error_message">Please check your internet connection and try again.</string>
+    <string name="retry">Try Again</string>
+    <string name="choose_file">Choose File</string>
+</resources>

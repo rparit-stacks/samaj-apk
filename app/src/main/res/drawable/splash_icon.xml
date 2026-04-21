@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Splash icon used by the Android 12+ SplashScreen API.
+
+  The system draws the icon inside a 288dp canvas and masks anything outside
+  the centered 192dp safe zone. By wrapping app_logo in an inset drawable
+  with a 48dp padding, the logo sits safely inside that 192dp area and is
+  never clipped. The outer transparent region absorbs the system mask.
+-->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/app_logo"
+    android:inset="48dp" />

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "866494706214",
+    "project_id": "samaj-app-1b38f",
+    "storage_bucket": "samaj-app-1b38f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:866494706214:android:eb26e845f6e7160734ace7",
+        "android_client_info": {
+          "package_name": "com.rps.samajapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDzdE1Se5QN1P0cGOi2_629sl4RtdxeycQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
