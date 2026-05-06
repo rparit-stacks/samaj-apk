@@ -31,6 +31,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -59,6 +62,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -202,9 +206,24 @@ class MainActivity : ComponentActivity() {
     //  Helpers
     // ──────────────────────────────────────────────
 
-    private fun resolveDeepLink(intent: Intent?): String? =
-        intent?.getStringExtra(EXTRA_DEEP_LINK)
-            ?: intent?.takeIf { it.action == Intent.ACTION_VIEW }?.dataString
+    private fun resolveDeepLink(intent: Intent?): String? {
+        if (intent == null) return null
+        // 1. Explicit deep link set by our foreground notification PendingIntent
+        intent.getStringExtra(EXTRA_DEEP_LINK)?.takeIf { it.isNotBlank() }?.let { return it }
+        // 2. App Links / custom-scheme intent (https://web.suryavanshisamaj.online or samaj://)
+        if (intent.action == Intent.ACTION_VIEW) {
+            intent.dataString?.takeIf { it.isNotBlank() }?.let { return it }
+        }
+        // 3. FCM background notification — FCM SDK passes data payload keys directly onto the
+        //    launcher Intent when the system auto-displays the notification. The backend puts the
+        //    path in data.url (e.g. "/feeds" or "/news/123").
+        val path = intent.getStringExtra("url")?.takeIf { it.isNotBlank() }
+            ?: intent.getStringExtra("link")?.takeIf { it.isNotBlank() }
+        if (path != null) {
+            return if (path.startsWith("http")) path else "$WEB_URL$path"
+        }
+        return null
+    }
 
     private fun applyInitialStatusBar() {
         val primary = ContextCompat.getColor(this, R.color.primary)
@@ -255,6 +274,15 @@ class MainActivity : ComponentActivity() {
         val error by hasError
         val topBarColor by statusBarColor
         val bottomBarColor by navigationBarColor
+        val loaded by pageLoaded
+
+        // Fade-in the content after the splash screen exits so the transition
+        // from splash → live page feels smooth rather than an abrupt cut.
+        val contentAlpha by animateFloatAsState(
+            targetValue = if (loaded) 1f else 0f,
+            animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+            label = "contentReveal"
+        )
 
         Box(Modifier.fillMaxSize()) {
 
@@ -263,6 +291,7 @@ class MainActivity : ComponentActivity() {
             Box(
                 Modifier
                     .fillMaxSize()
+                    .graphicsLayer { alpha = contentAlpha }
                     .systemBarsPadding()
                     .imePadding()
             ) {
@@ -436,6 +465,7 @@ class MainActivity : ComponentActivity() {
             pageLoaded.value = true
             syncFcmToken(view)
             syncThemeColor(view)
+            injectShareBridge(view)
         }
 
         override fun onReceivedError(
@@ -606,6 +636,42 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * Overrides navigator.share() in the WebView with a native Android share sheet.
+     * Also marks window.__samajNativeShare = true so the web app can detect native share support.
+     * Runs every onPageFinished to survive SPA navigations.
+     */
+    private fun injectShareBridge(view: WebView) {
+        val js = """
+            (function(){
+                if(window.__samajSharePatched) return;
+                window.__samajSharePatched = true;
+                window.__samajNativeShare = true;
+                if(window.SamajNative){
+                    Object.defineProperty(navigator,'share',{
+                        configurable:true,
+                        value:function(data){
+                            try{
+                                var url   = (data && data.url)   ? data.url   : window.location.href;
+                                var title = (data && data.title) ? data.title : document.title || '';
+                                var text  = (data && data.text)  ? data.text  : '';
+                                window.SamajNative.nativeShare(url,title,text);
+                                return Promise.resolve();
+                            }catch(e){
+                                return Promise.reject(e);
+                            }
+                        }
+                    });
+                    Object.defineProperty(navigator,'canShare',{
+                        configurable:true,
+                        value:function(){ return true; }
+                    });
+                }
+            })();
+        """.trimIndent()
+        view.evaluateJavascript(js, null)
     }
 
     private fun isColorLight(color: Int): Boolean {

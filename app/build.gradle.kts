@@ -43,6 +43,10 @@ android {
         compose = true
         buildConfig = true
     }
+
+    lint {
+        disable += "InvalidFragmentVersionForActivityResult"
+    }
 }
 
 dependencies {

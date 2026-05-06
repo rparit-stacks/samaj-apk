@@ -1,6 +1,7 @@
 package com.rps.samajapp
 
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -67,4 +68,40 @@ class WebAppInterface(
     /** Returns true when the app is running inside the native WebView wrapper. */
     @JavascriptInterface
     fun isNativeApp(): Boolean = true
+
+    /**
+     * Opens the Android native share sheet.
+     * Called by the injected navigator.share() override and directly from the web app via
+     *   window.SamajNative.nativeShare(url, title, text)
+     *
+     * Builds a share text that includes title, body text, and a URL so any messaging app,
+     * WhatsApp, clipboard, etc. receives all three in a single tap.
+     */
+    @JavascriptInterface
+    fun nativeShare(url: String, title: String, text: String) {
+        mainHandler.post {
+            val shareBody = buildString {
+                if (title.isNotBlank()) append(title).append("\n\n")
+                if (text.isNotBlank()) append(text).append("\n\n")
+                val fullUrl = when {
+                    url.startsWith("http") -> url
+                    url.startsWith("/")    -> "${MainActivity.WEB_URL}$url"
+                    else                   -> url
+                }
+                if (fullUrl.isNotBlank()) append(fullUrl)
+            }.trim()
+
+            if (shareBody.isEmpty()) return@post
+
+            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, title.ifBlank { "Suryavanshi Samaj" })
+                putExtra(Intent.EXTRA_TEXT, shareBody)
+            }
+            val chooser = Intent.createChooser(sendIntent, "Share via")
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(chooser)
+        }
+    }
+
 }
