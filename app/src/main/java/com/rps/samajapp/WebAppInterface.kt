@@ -22,6 +22,17 @@ class WebAppInterface(
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    /**
+     * Called by the web app to initiate native Google Sign-In via Credential Manager.
+     * The result is delivered back to JavaScript via window.__samajGoogleCallback(idToken, error).
+     */
+    var onGoogleSignInRequested: (() -> Unit)? = null
+
+    @JavascriptInterface
+    fun startGoogleSignIn() {
+        mainHandler.post { onGoogleSignInRequested?.invoke() }
+    }
+
     /** Returns the current FCM device token so the web app can register it with the backend. */
     @JavascriptInterface
     fun getFcmToken(): String =

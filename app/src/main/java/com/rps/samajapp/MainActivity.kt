@@ -76,8 +76,15 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.ServiceWorkerClientCompat
 import androidx.webkit.ServiceWorkerControllerCompat
+import androidx.credentials.CredentialManager
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialException
+import androidx.lifecycle.lifecycleScope
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.messaging.BuildConfig
 import com.google.firebase.messaging.FirebaseMessaging
+import kotlinx.coroutines.launch
 
 import com.rps.samajapp.ui.theme.SamajAppTheme
 import java.io.File
@@ -92,10 +99,18 @@ class MainActivity : ComponentActivity() {
         const val PREFS_NAME = "samaj_prefs"
         const val KEY_FCM_TOKEN = "fcm_token"
         const val EXTRA_DEEP_LINK = "deep_link_url"
+        /**
+         * Web OAuth 2.0 Client ID from Google Cloud Console.
+         * Must match the client ID used in VITE_GOOGLE_CLIENT_ID on the frontend.
+         * The Android OAuth client (SHA-1 fingerprint) must also be registered in Google Cloud Console
+         * for Credential Manager to work, but this value is always the WEB client ID.
+         */
+        const val GOOGLE_WEB_CLIENT_ID = "260479836870-689qqs68m7cj66d9b2215dvcl972gee8.apps.googleusercontent.com"
     }
 
     // Held at activity level so WebView survives recompositions
     private var webView: WebView? = null
+    private var webAppInterface: WebAppInterface? = null
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     private var cameraUri: Uri? = null
     private var backPressedAt = 0L
@@ -262,6 +277,61 @@ class MainActivity : ComponentActivity() {
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
+    /**
+     * Launches native Google Sign-In using Credential Manager.
+     * On success/failure, calls window.__samajGoogleCallback(idToken, error) in the WebView.
+     */
+    private fun startGoogleSignIn() {
+        if (GOOGLE_WEB_CLIENT_ID.isBlank()) {
+            deliverGoogleSignInResult(null, "Google Sign-In is not configured (missing client ID)")
+            return
+        }
+        val credentialManager = CredentialManager.create(this)
+        val googleIdOption = GetGoogleIdOption.Builder()
+            .setFilterByAuthorizedAccounts(false) // show all device accounts
+            .setServerClientId(GOOGLE_WEB_CLIENT_ID)
+            .setAutoSelectEnabled(false)
+            .build()
+        val request = GetCredentialRequest.Builder()
+            .addCredentialOption(googleIdOption)
+            .build()
+
+        lifecycleScope.launch {
+            try {
+                val result = credentialManager.getCredential(this@MainActivity, request)
+                val credential = result.credential
+                if (credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+                    val googleCredential = GoogleIdTokenCredential.createFrom(credential.data)
+                    deliverGoogleSignInResult(googleCredential.idToken, null)
+                } else {
+                    deliverGoogleSignInResult(null, "Unexpected credential type")
+                }
+            } catch (e: GetCredentialException) {
+                val msg = when {
+                    e.message?.contains("cancel", ignoreCase = true) == true -> null // user cancelled — silent
+                    e.message?.contains("interrupt", ignoreCase = true) == true -> null
+                    else -> e.localizedMessage ?: "Google Sign-In failed"
+                }
+                deliverGoogleSignInResult(null, msg)
+            } catch (e: Exception) {
+                deliverGoogleSignInResult(null, e.localizedMessage ?: "Google Sign-In failed")
+            }
+        }
+    }
+
+    private fun deliverGoogleSignInResult(idToken: String?, error: String?) {
+        val wv = webView ?: return
+        val js = if (idToken != null) {
+            // Escape single quotes in the token (JWTs don't contain them but belt-and-suspenders)
+            val escaped = idToken.replace("\\", "\\\\").replace("'", "\\'")
+            "if(typeof window.__samajGoogleCallback==='function'){window.__samajGoogleCallback('$escaped',null);}"
+        } else {
+            val escapedErr = (error ?: "cancelled").replace("\\", "\\\\").replace("'", "\\'")
+            "if(typeof window.__samajGoogleCallback==='function'){window.__samajGoogleCallback(null,'$escapedErr');}"
+        }
+        runOnUiThread { wv.evaluateJavascript(js, null) }
+    }
+
     // ──────────────────────────────────────────────
     //  Compose UI
     // ──────────────────────────────────────────────
@@ -307,7 +377,10 @@ class MainActivity : ComponentActivity() {
                             wv.setupWebView()
                             wv.webViewClient = buildWebViewClient()
                             wv.webChromeClient = buildChromeClient()
-                            wv.addJavascriptInterface(WebAppInterface(ctx, window), "SamajNative")
+                            webAppInterface = WebAppInterface(ctx, window).also { wai ->
+                                wai.onGoogleSignInRequested = ::startGoogleSignIn
+                            }
+                            wv.addJavascriptInterface(webAppInterface!!, "SamajNative")
 
                             if (savedState != null) {
                                 wv.restoreState(savedState)
